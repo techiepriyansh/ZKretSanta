@@ -187,6 +187,18 @@ impl Block {
             return Ok(());
         }
 
+        // linear chain
+        let last_accepted_id = self.state.get_last_accepted_block_id().await?;
+        if self.parent_id != last_accepted_id {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "parent block id {} != last accepted block id {}",
+                    self.parent_id, last_accepted_id
+                ),
+            ));
+        }
+
         let prnt_blk = self.state.get_block(&self.parent_id).await?;
 
         // ensure the height of the block is immediately following its parent

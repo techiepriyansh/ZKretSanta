@@ -19,8 +19,6 @@ pub struct State {
     /// Maps block Id to Block.
     /// Each element is verified but not yet accepted/rejected (e.g., preferred).
     pub verified_blocks: Arc<RwLock<HashMap<ids::Id, Block>>>,
-
-    pub initialized: Arc<RwLock<bool>>,
 }
 
 impl Default for State {
@@ -28,7 +26,6 @@ impl Default for State {
         Self {
             db: Arc::new(RwLock::new(subnet::rpc::database::memdb::Database::new())),
             verified_blocks: Arc::new(RwLock::new(HashMap::new())),
-            initialized: Arc::new(RwLock::new(false)),
         }
     }
 }
