@@ -10,10 +10,6 @@ use crate::block::Block;
 use avalanche_types::{choices, ids, subnet};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-
-#[allow(clippy::module_name_repetitions)]
-pub mod zkret_state;
-
 /// Manages block and chain states for this Vm, both in-memory and persistent.
 #[derive(Clone)]
 pub struct State {

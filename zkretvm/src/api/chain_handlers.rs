@@ -36,7 +36,7 @@ pub trait Rpc {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ProposeBlockArgs {
-    pub trasaction: Transaction,
+    pub transaction: Transaction,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -89,7 +89,7 @@ where
         let vm = self.vm.clone();
 
         Box::pin(async move {
-            vm.propose_block(args.trasaction)
+            vm.propose_block(args.transaction)
                 .await
                 .map_err(create_jsonrpc_error)?;
             Ok(ProposeBlockResponse { success: true })

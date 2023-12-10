@@ -1,3 +1,5 @@
+#![allow(clippy::missing_panics_doc)]
+
 use std::{
     collections::HashMap,
     io::{self, Error, ErrorKind},
@@ -5,6 +7,8 @@ use std::{
 
 use avalanche_types::{ids, jsonrpc};
 use serde::{Deserialize, Serialize};
+
+use crate::block::transaction::Transaction;
 
 /// Represents the RPC response for API `ping`.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -127,7 +131,7 @@ pub struct ProposeBlockResponse {
 pub async fn propose_block(
     http_rpc: &str,
     url_path: &str,
-    d: Vec<u8>,
+    tx: Transaction,
 ) -> io::Result<ProposeBlockResponse> {
     log::info!("propose_block {http_rpc} with {url_path}");
 
@@ -136,8 +140,8 @@ pub async fn propose_block(
 
     let mut m = HashMap::new();
     m.insert(
-        "data".to_string(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &d),
+        "transaction".to_string(),
+        serde_json::to_string(&tx).unwrap(),
     );
 
     let params = vec![m];
