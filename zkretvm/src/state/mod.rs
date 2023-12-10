@@ -139,6 +139,12 @@ impl State {
         verified_blocks.remove(blk_id);
     }
 
+    /// Empties "`verified_blocks`".
+    pub async fn clear_verified(&mut self) {
+        let mut verified_blocks = self.verified_blocks.write().await;
+        verified_blocks.clear();
+    }
+
     /// Returns "true" if the block Id has been already verified.
     pub async fn has_verified(&self, blk_id: &ids::Id) -> bool {
         let verified_blocks = self.verified_blocks.read().await;

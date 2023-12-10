@@ -241,11 +241,14 @@ impl Block {
 
         let merkle_leaves = self.state.get_merkle_leaves().await?;
         let nullifiers = self.state.get_nullifiers().await?;
-        let entered_pub_keys = self.state.get_entered_pub_keys().await?;
-        if !self
-            .transaction
-            .verify(&merkle_leaves, &nullifiers, &entered_pub_keys)
-        {
+        let unclaimed_pub_keys = self.state.get_unclaimed_pub_keys().await?;
+        let revealed_pub_keys = self.state.get_revealed_pub_keys().await?;
+        if !self.transaction.verify(
+            &merkle_leaves,
+            &nullifiers,
+            &unclaimed_pub_keys,
+            &revealed_pub_keys,
+        ) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!("block {} transaction is invalid", self.id),
@@ -265,18 +268,29 @@ impl Block {
 
         let mut merkle_leaves = self.state.get_merkle_leaves().await?;
         let mut nullifiers = self.state.get_nullifiers().await?;
-        let mut entered_pub_keys = self.state.get_entered_pub_keys().await?;
-        self.transaction.update_state(&mut merkle_leaves, &mut nullifiers, &mut entered_pub_keys);
+        let mut unclaimed_pub_keys = self.state.get_unclaimed_pub_keys().await?;
+        let mut revealed_pub_keys = self.state.get_revealed_pub_keys().await?;
+
+        self.transaction.update_state(
+            &mut merkle_leaves,
+            &mut nullifiers,
+            &mut unclaimed_pub_keys,
+            &mut revealed_pub_keys,
+        );
 
         self.state.set_merkle_leaves(&merkle_leaves).await?;
         self.state.set_nullifiers(&nullifiers).await?;
-        self.state.set_entered_pub_keys(&entered_pub_keys).await?;
+        self.state
+            .set_unclaimed_pub_keys(&unclaimed_pub_keys)
+            .await?;
+        self.state.set_revealed_pub_keys(&revealed_pub_keys).await?;
 
         // only decided blocks are persistent -- no reorg
         self.state.write_block(&self.clone()).await?;
         self.state.set_last_accepted_block(&self.id()).await?;
 
-        self.state.remove_verified(&self.id()).await;
+        // self.state.remove_verified(&self.id()).await;
+        self.state.clear_verified().await;
         Ok(())
     }
 
