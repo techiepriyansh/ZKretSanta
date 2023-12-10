@@ -1,14 +1,14 @@
 [package]
 name = "zkretvm"
-version = "0.0.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 rust-version = "1.71"
 description = "Avalanche VM for ZKretSanta"
-license = "BSD-3-Clause"
 repository = "https://github.com/techiepriyansh/ZKretSanta/"
 readme = "../README.md"
 
 [dependencies]
+santazk.workspace = true
 avalanche-types = { version = "0.1.4", features = ["subnet", "codec_base64"] } # https://crates.io/crates/avalanche-types
 base64 = { version = "0.21.5" }
 bytes = "1.4.0"

@@ -2873,7 +2873,7 @@ dependencies = [
 
 [[package]]
 name = "santazk"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
@@ -4189,6 +4189,7 @@ dependencies = [
  "jsonrpc-derive",
  "log",
  "random-manager",
+ "santazk",
  "semver",
  "serde",
  "serde_json",
