@@ -15,10 +15,9 @@ const MERKLE_TREE_DEPTH: usize = 7;
 pub(crate) type Bytes64 = [u8; 64];
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Clone, Derivative, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, Derivative, Default)]
 #[derivative(Debug, PartialEq, Eq)]
 pub struct SBytes64(pub [u8; 32], pub [u8; 32]); // serde-serializable Bytes64
-
 #[allow(clippy::module_name_repetitions)]
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Derivative, Default)]
@@ -40,6 +39,17 @@ pub struct Transaction {
     pub data: TransactionData,
 }
 
+#[serde_as]
+#[derive(Serialize, Deserialize, Clone, Derivative, Default)]
+#[derivative(Debug, PartialEq, Eq)]
+pub struct BlockState {
+    pub merkle_root: SBytes64,
+    pub merkle_leaves: Vec<SBytes64>,
+    pub nullifiers: Vec<SBytes64>,
+    pub unclaimed_pub_keys: Vec<SBytes64>,
+    pub revealed_pub_keys: Vec<SBytes64>,
+}
+
 impl Transaction {
     pub(crate) fn genesis(genesis_data: Vec<u8>) -> Self {
         let mut transaction = Transaction {
@@ -59,17 +69,27 @@ impl Transaction {
         transaction
     }
 
-    pub(crate) fn verify(
-        &self,
-        merkle_leaves: &[Bytes64],
-        nullifiers: &[Bytes64],
-        unclaimed_pub_keys: &[Bytes64],
-        revealed_pub_keys: &[Bytes64],
-    ) -> bool {
-        let entered_pub_keys_set = merkle_leaves.iter().copied().collect::<HashSet<_>>();
-        let nullifiers_set = nullifiers.iter().copied().collect::<HashSet<_>>();
-        let unclaimed_pub_keys_set = unclaimed_pub_keys.iter().copied().collect::<HashSet<_>>();
-        let revealed_pub_keys_set = revealed_pub_keys.iter().copied().collect::<HashSet<_>>();
+    pub(crate) fn verify(&self, bs: &BlockState) -> bool {
+        let entered_pub_keys_set = bs
+            .merkle_leaves
+            .iter()
+            .map(SBytes64::to_u8_64)
+            .collect::<HashSet<_>>();
+        let nullifiers_set = bs
+            .nullifiers
+            .iter()
+            .map(SBytes64::to_u8_64)
+            .collect::<HashSet<_>>();
+        let unclaimed_pub_keys_set = bs
+            .unclaimed_pub_keys
+            .iter()
+            .map(SBytes64::to_u8_64)
+            .collect::<HashSet<_>>();
+        let revealed_pub_keys_set = bs
+            .revealed_pub_keys
+            .iter()
+            .map(SBytes64::to_u8_64)
+            .collect::<HashSet<_>>();
 
         match self.transaction_type {
             0 => true,
@@ -94,11 +114,7 @@ impl Transaction {
                 let dh_pub_key = self.data.2.to_u8_64();
                 let signature = self.data.3.to_u8_64();
 
-                let root = MerkleTree::new(
-                    MERKLE_TREE_DEPTH,
-                    &merkle_leaves.iter().map(|b| b.to_vec()).collect::<Vec<_>>(),
-                )
-                .root();
+                let root = bs.merkle_root.to_u8_64();
 
                 let ca_verifier = ChoiceAuthVerifier::new();
                 ca_verifier.verify(
@@ -144,29 +160,33 @@ impl Transaction {
         }
     }
 
-    pub(crate) fn update_state(
-        &self,
-        merkle_leaves: &mut Vec<Bytes64>,
-        nullifiers: &mut Vec<Bytes64>,
-        unclaimed_pub_keys: &mut Vec<Bytes64>,
-        revealed_pub_keys: &mut Vec<Bytes64>,
-    ) {
+    pub(crate) fn update_state(&self, bs: &mut BlockState) {
         match self.transaction_type {
             1 => {
-                let pub_key = self.data.0.to_u8_64();
-                merkle_leaves.push(pub_key);
-                unclaimed_pub_keys.push(pub_key);
+                let pub_key = self.data.0;
+                bs.merkle_leaves.push(pub_key);
+                bs.unclaimed_pub_keys.push(pub_key);
+                bs.merkle_root = SBytes64::from_bytes(
+                    &MerkleTree::new(
+                        MERKLE_TREE_DEPTH,
+                        &bs.merkle_leaves
+                            .iter()
+                            .map(SBytes64::to_vec)
+                            .collect::<Vec<_>>(),
+                    )
+                    .root(),
+                );
             }
             2 => {
-                let nullifier = self.data.1.to_u8_64();
-                nullifiers.push(nullifier);
+                let nullifier = self.data.1;
+                bs.nullifiers.push(nullifier);
 
-                let choice = self.data.0.to_u8_64();
-                unclaimed_pub_keys.retain(|pk| pk != &choice);
+                let choice = self.data.0;
+                bs.unclaimed_pub_keys.retain(|pk| pk != &choice);
             }
             3 => {
-                let pk = self.data.0.to_u8_64();
-                revealed_pub_keys.push(pk);
+                let pk = self.data.0;
+                bs.revealed_pub_keys.push(pk);
             }
             _ => {}
         };
@@ -185,6 +205,13 @@ impl SBytes64 {
         let mut res = [0u8; 64];
         res[0..32].copy_from_slice(&self.0);
         res[32..64].copy_from_slice(&self.1);
+        res
+    }
+
+    pub(crate) fn to_vec(&self) -> Vec<u8> {
+        let mut res = Vec::new();
+        res.extend_from_slice(&self.0);
+        res.extend_from_slice(&self.1);
         res
     }
 }

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 pub mod transaction;
-use transaction::Transaction;
+use transaction::{BlockState, Transaction};
 
 /// Represents a block, specific to [`Vm`](crate::vm::Vm).
 #[serde_as]
@@ -30,6 +30,8 @@ pub struct Block {
     timestamp: u64,
 
     transaction: Transaction,
+
+    block_state: BlockState,
 
     /// Current block status.
     #[serde(skip)]
@@ -56,6 +58,7 @@ impl Block {
         height: u64,
         timestamp: u64,
         transaction: Transaction,
+        block_state: BlockState,
         status: choices::status::Status,
     ) -> io::Result<Self> {
         let mut b = Self {
@@ -63,6 +66,7 @@ impl Block {
             height,
             timestamp,
             transaction,
+            block_state,
             ..Default::default()
         };
 
@@ -137,6 +141,11 @@ impl Block {
         &self.transaction
     }
 
+    #[must_use]
+    pub fn block_state(&self) -> &BlockState {
+        &self.block_state
+    }
+
     /// Returns the status of this block.
     #[must_use]
     pub fn status(&self) -> choices::status::Status {
@@ -186,18 +195,6 @@ impl Block {
             return Ok(());
         }
 
-        // linear chain
-        let last_accepted_id = self.state.get_last_accepted_block_id().await?;
-        if self.parent_id != last_accepted_id {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "parent block id {} != last accepted block id {}",
-                    self.parent_id, last_accepted_id
-                ),
-            ));
-        }
-
         let prnt_blk = self.state.get_block(&self.parent_id).await?;
 
         // ensure the height of the block is immediately following its parent
@@ -239,20 +236,22 @@ impl Block {
             ));
         }
 
-        let merkle_leaves = self.state.get_merkle_leaves().await?;
-        let nullifiers = self.state.get_nullifiers().await?;
-        let unclaimed_pub_keys = self.state.get_unclaimed_pub_keys().await?;
-        let revealed_pub_keys = self.state.get_revealed_pub_keys().await?;
-
-        if !self.transaction.verify(
-            &merkle_leaves,
-            &nullifiers,
-            &unclaimed_pub_keys,
-            &revealed_pub_keys,
-        ) {
+        if !self.transaction.verify(&prnt_blk.block_state) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!("block {} transaction is invalid", self.id),
+            ));
+        }
+
+        let mut updated_state = prnt_blk.block_state.clone();
+        self.transaction.update_state(&mut updated_state);
+        if self.block_state != updated_state {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "block {} state is not equal to updated state",
+                    self.id
+                ),
             ));
         }
 
@@ -267,31 +266,11 @@ impl Block {
     pub async fn accept(&mut self) -> io::Result<()> {
         self.set_status(choices::status::Status::Accepted);
 
-        let mut merkle_leaves = self.state.get_merkle_leaves().await?;
-        let mut nullifiers = self.state.get_nullifiers().await?;
-        let mut unclaimed_pub_keys = self.state.get_unclaimed_pub_keys().await?;
-        let mut revealed_pub_keys = self.state.get_revealed_pub_keys().await?;
-
-        self.transaction.update_state(
-            &mut merkle_leaves,
-            &mut nullifiers,
-            &mut unclaimed_pub_keys,
-            &mut revealed_pub_keys,
-        );
-
-        self.state.set_merkle_leaves(&merkle_leaves).await?;
-        self.state.set_nullifiers(&nullifiers).await?;
-        self.state
-            .set_unclaimed_pub_keys(&unclaimed_pub_keys)
-            .await?;
-        self.state.set_revealed_pub_keys(&revealed_pub_keys).await?;
-
         // only decided blocks are persistent -- no reorg
         self.state.write_block(&self.clone()).await?;
         self.state.set_last_accepted_block(&self.id()).await?;
 
-        // self.state.remove_verified(&self.id()).await;
-        self.state.clear_verified().await;
+        self.state.remove_verified(&self.id()).await;
         Ok(())
     }
 

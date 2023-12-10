@@ -12,7 +12,7 @@ use crate::{
         chain_handlers::{ChainHandler, ChainService},
         static_handlers::{StaticHandler, StaticService},
     },
-    block::{transaction::Transaction, Block},
+    block::{transaction::{Transaction, BlockState}, Block},
     genesis::Genesis,
     state,
 };
@@ -263,6 +263,7 @@ where
                 0,
                 0,
                 Transaction::genesis(vm_state.genesis.data.as_bytes().to_vec()),
+                BlockState::default(),
                 choices::status::Status::default(),
             )?;
             genesis_block.set_state(state.clone());
@@ -354,17 +355,23 @@ where
             // "state" must have preferred block in cache/verified_block
             // otherwise, not found error from rpcchainvm database
             let prnt_blk = state.get_block(&vm_state.preferred).await?;
+
             let unix_now = Utc::now()
                 .timestamp()
                 .try_into()
                 .expect("timestamp to convert from i64 to u64");
 
             let first = mempool.pop_front().unwrap();
+
+            let mut block_state = prnt_blk.block_state().clone();
+            first.update_state(&mut block_state);
+
             let mut block = Block::try_new(
                 prnt_blk.id(),
                 prnt_blk.height() + 1,
                 unix_now,
                 first,
+                block_state,
                 choices::status::Status::Processing,
             )?;
             block.set_state(state.clone());
