@@ -5,8 +5,7 @@ use std::{
 
 use crate::state;
 use avalanche_types::{
-    choices,
-    ids,
+    choices, ids,
     subnet::rpc::consensus::snowman::{self, Decidable},
 };
 use chrono::{Duration, Utc};
@@ -240,6 +239,19 @@ impl Block {
             ));
         }
 
+        let merkle_leaves = self.state.get_merkle_leaves().await?;
+        let nullifiers = self.state.get_nullifiers().await?;
+        let entered_pub_keys = self.state.get_entered_pub_keys().await?;
+        if !self
+            .transaction
+            .verify(&merkle_leaves, &nullifiers, &entered_pub_keys)
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("block {} transaction is invalid", self.id),
+            ));
+        }
+
         // add newly verified block to memory
         self.state.add_verified(&self.clone()).await;
         Ok(())
@@ -250,6 +262,15 @@ impl Block {
     /// Returns an error if the state can't be updated.
     pub async fn accept(&mut self) -> io::Result<()> {
         self.set_status(choices::status::Status::Accepted);
+
+        let mut merkle_leaves = self.state.get_merkle_leaves().await?;
+        let mut nullifiers = self.state.get_nullifiers().await?;
+        let mut entered_pub_keys = self.state.get_entered_pub_keys().await?;
+        self.transaction.update_state(&mut merkle_leaves, &mut nullifiers, &mut entered_pub_keys);
+
+        self.state.set_merkle_leaves(&merkle_leaves).await?;
+        self.state.set_nullifiers(&nullifiers).await?;
+        self.state.set_entered_pub_keys(&entered_pub_keys).await?;
 
         // only decided blocks are persistent -- no reorg
         self.state.write_block(&self.clone()).await?;

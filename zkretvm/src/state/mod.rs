@@ -6,10 +6,13 @@ use std::{
     sync::Arc,
 };
 
-use crate::block::{transaction::Transaction, Block};
+use crate::block::Block;
 use avalanche_types::{choices, ids, subnet};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+
+#[allow(clippy::module_name_repetitions)]
+pub mod zkret_state;
 
 /// Manages block and chain states for this Vm, both in-memory and persistent.
 #[derive(Clone)]
@@ -187,6 +190,8 @@ impl State {
 /// RUST_LOG=debug cargo test --package zkretvm --lib -- state::test_state --exact --show-output
 #[tokio::test]
 async fn test_state() {
+    use crate::block::transaction::Transaction;
+
     let _ = env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .is_test(true)

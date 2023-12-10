@@ -5,7 +5,7 @@ use serde_with::serde_as;
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Derivative, Default)]
 #[derivative(Debug, PartialEq, Eq)]
-pub struct Bytes64([u8; 32], [u8; 32]);
+pub struct Bytes64(pub [u8; 32], pub [u8; 32]);
 
 #[allow(clippy::module_name_repetitions)]
 #[serde_as]
@@ -44,6 +44,24 @@ impl Transaction {
         };
         transaction.data.0 = Bytes64::new(pub_key);
         transaction
+    }
+
+    pub(crate) fn verify(
+        &self,
+        merkle_leaves: &Vec<Bytes64>,
+        nullifiers: &Vec<Bytes64>,
+        entered_pub_keys: &Vec<Bytes64>,
+    ) -> bool {
+        unimplemented!("verify")
+    }
+
+    pub(crate) fn update_state(
+        &self,
+        merkle_leaves: &mut Vec<Bytes64>,
+        nullifiers: &mut Vec<Bytes64>,
+        entered_pub_keys: &mut Vec<Bytes64>,
+    ) {
+        unimplemented!("update_state")
     }
 }
 
