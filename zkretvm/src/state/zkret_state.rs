@@ -2,6 +2,8 @@
 
 use std::io::{self, Error, ErrorKind};
 
+use avalanche_types::subnet;
+
 use super::State;
 use crate::block::transaction::Bytes64;
 
@@ -35,19 +37,26 @@ impl State {
         db.put(key, &encode(list)).await.map_err(|e| {
             Error::new(
                 ErrorKind::Other,
-                format!("failed to put list leaves: {e:?}"),
+                format!("failed to put bytes64 list: {e:?}"),
             )
         })
     }
 
     async fn get_bytes64_vec(&self, key: &[u8]) -> io::Result<Vec<Bytes64>> {
         let db = self.db.read().await;
-        db.get(key).await.map(decode).map_err(|e| {
-            Error::new(
-                ErrorKind::Other,
-                format!("failed to get list leaves: {e:?}"),
-            )
-        })
+        match db.get(key).await.map(decode) {
+            Ok(d) => Ok(d),
+            Err(e) => {
+                if subnet::rpc::errors::is_not_found(&e) {
+                    Ok(Vec::new())
+                } else {
+                    Err(Error::new(
+                        ErrorKind::Other,
+                        format!("failed to get bytes64 list: {e:?}"),
+                    ))
+                }
+            }
+        }
     }
 
     pub async fn set_merkle_leaves(&self, leaves: &Vec<Bytes64>) -> io::Result<()> {

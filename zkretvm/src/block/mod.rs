@@ -243,6 +243,7 @@ impl Block {
         let nullifiers = self.state.get_nullifiers().await?;
         let unclaimed_pub_keys = self.state.get_unclaimed_pub_keys().await?;
         let revealed_pub_keys = self.state.get_revealed_pub_keys().await?;
+
         if !self.transaction.verify(
             &merkle_leaves,
             &nullifiers,
