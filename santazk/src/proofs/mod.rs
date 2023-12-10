@@ -13,7 +13,7 @@ use crate::{
     serialization::deserialize_jub_jub_affine_point,
 };
 
-const CHOICE_AUTH_PROVER_PARAMS: &[u8; 48603984] =
+const CHOICE_AUTH_PROVER_PARAMS: &[u8; 29015568] =
     include_bytes!("../../params/choice_auth.groth16.pk");
 const CHOICE_AUTH_VERIFIER_PARAMS: &[u8; 1064] =
     include_bytes!("../../params/choice_auth.groth16.vk");
