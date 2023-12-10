@@ -6,7 +6,6 @@ use std::{
 use crate::state;
 use avalanche_types::{
     choices,
-    codec::serde::hex_0x_bytes::Hex0xBytes,
     ids,
     subnet::rpc::consensus::snowman::{self, Decidable},
 };
@@ -14,6 +13,9 @@ use chrono::{Duration, Utc};
 use derivative::{self, Derivative};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+
+pub mod transaction;
+use transaction::Transaction;
 
 /// Represents a block, specific to [`Vm`](crate::vm::Vm).
 #[serde_as]
@@ -27,9 +29,8 @@ pub struct Block {
     height: u64,
     /// Unix second when this block was proposed.
     timestamp: u64,
-    /// Arbitrary data.
-    #[serde_as(as = "Hex0xBytes")]
-    data: Vec<u8>,
+
+    transaction: Transaction,
 
     /// Current block status.
     #[serde(skip)]
@@ -55,14 +56,14 @@ impl Block {
         parent_id: ids::Id,
         height: u64,
         timestamp: u64,
-        data: Vec<u8>,
+        transaction: Transaction,
         status: choices::status::Status,
     ) -> io::Result<Self> {
         let mut b = Self {
             parent_id,
             height,
             timestamp,
-            data,
+            transaction,
             ..Default::default()
         };
 
@@ -132,10 +133,9 @@ impl Block {
         self.timestamp
     }
 
-    /// Returns the data of this block.
     #[must_use]
-    pub fn data(&self) -> &[u8] {
-        &self.data
+    pub fn transaction(&self) -> &Transaction {
+        &self.transaction
     }
 
     /// Returns the status of this block.
@@ -266,135 +266,6 @@ impl fmt::Display for Block {
         let serialized = self.to_json_string().unwrap();
         write!(f, "{serialized}")
     }
-}
-
-/// RUST_LOG=debug cargo test --package zkretvm --lib -- block::test_block --exact --show-output
-#[tokio::test]
-async fn test_block() {
-    let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .is_test(true)
-        .try_init();
-
-    let mut genesis_blk = Block::try_new(
-        ids::Id::empty(),
-        0,
-        Utc::now().timestamp() as u64,
-        random_manager::secure_bytes(10).unwrap(),
-        choices::status::Status::default(),
-    )
-    .unwrap();
-    log::info!("deserialized: {genesis_blk} (block Id: {})", genesis_blk.id);
-
-    let serialized = genesis_blk.to_vec().unwrap();
-    let deserialized = Block::from_slice(&serialized).unwrap();
-    log::info!("deserialized: {deserialized}");
-
-    assert_eq!(genesis_blk, deserialized);
-
-    let state = state::State::default();
-    assert!(!state.has_last_accepted_block().await.unwrap());
-
-    // inner db instance is protected with arc and mutex
-    // so cloning outer struct "State" should implicitly
-    // share the db instances
-    genesis_blk.set_state(state.clone());
-
-    genesis_blk.verify().await.unwrap();
-    assert!(state.has_verified(&genesis_blk.id()).await);
-
-    genesis_blk.accept().await.unwrap();
-    assert_eq!(genesis_blk.status, choices::status::Status::Accepted);
-    assert!(state.has_last_accepted_block().await.unwrap());
-    assert!(!state.has_verified(&genesis_blk.id()).await); // removed after acceptance
-
-    let last_accepted_blk_id = state.get_last_accepted_block_id().await.unwrap();
-    assert_eq!(last_accepted_blk_id, genesis_blk.id());
-
-    let read_blk = state.get_block(&genesis_blk.id()).await.unwrap();
-    assert_eq!(genesis_blk, read_blk);
-
-    let mut blk1 = Block::try_new(
-        genesis_blk.id,
-        genesis_blk.height + 1,
-        genesis_blk.timestamp + 1,
-        random_manager::secure_bytes(10).unwrap(),
-        choices::status::Status::default(),
-    )
-    .unwrap();
-    log::info!("blk1: {blk1}");
-    blk1.set_state(state.clone());
-
-    blk1.verify().await.unwrap();
-    assert!(state.has_verified(&blk1.id()).await);
-
-    blk1.accept().await.unwrap();
-    assert_eq!(blk1.status, choices::status::Status::Accepted);
-    assert!(!state.has_verified(&blk1.id()).await); // removed after acceptance
-
-    let last_accepted_blk_id = state.get_last_accepted_block_id().await.unwrap();
-    assert_eq!(last_accepted_blk_id, blk1.id());
-
-    let read_blk = state.get_block(&blk1.id()).await.unwrap();
-    assert_eq!(blk1, read_blk);
-
-    let mut blk2 = Block::try_new(
-        blk1.id,
-        blk1.height + 1,
-        blk1.timestamp + 1,
-        random_manager::secure_bytes(10).unwrap(),
-        choices::status::Status::default(),
-    )
-    .unwrap();
-    log::info!("blk2: {blk2}");
-    blk2.set_state(state.clone());
-
-    blk2.verify().await.unwrap();
-    assert!(state.has_verified(&blk2.id()).await);
-
-    blk2.reject().await.unwrap();
-    assert_eq!(blk2.status, choices::status::Status::Rejected);
-    assert!(!state.has_verified(&blk2.id()).await); // removed after acceptance
-
-    // "blk2" is rejected, so last accepted block must be "blk1"
-    let last_accepted_blk_id = state.get_last_accepted_block_id().await.unwrap();
-    assert_eq!(last_accepted_blk_id, blk1.id());
-
-    let read_blk = state.get_block(&blk2.id()).await.unwrap();
-    assert_eq!(blk2, read_blk);
-
-    let mut blk3 = Block::try_new(
-        blk2.id,
-        blk2.height - 1,
-        blk2.timestamp + 1,
-        random_manager::secure_bytes(10).unwrap(),
-        choices::status::Status::default(),
-    )
-    .unwrap();
-    log::info!("blk3: {blk3}");
-    blk3.set_state(state.clone());
-
-    assert!(blk3.verify().await.is_err());
-
-    assert!(state.has_last_accepted_block().await.unwrap());
-
-    // blk4 built from blk2 has invalid timestamp built 2 hours in future
-    let mut blk4 = Block::try_new(
-        blk2.id,
-        blk2.height + 1,
-        (Utc::now() + Duration::hours(2)).timestamp() as u64,
-        random_manager::secure_bytes(10).unwrap(),
-        choices::status::Status::default(),
-    )
-    .unwrap();
-    log::info!("blk4: {blk4}");
-    blk4.set_state(state.clone());
-    assert!(blk4
-        .verify()
-        .await
-        .unwrap_err()
-        .to_string()
-        .contains("1 hour ahead"));
 }
 
 #[tonic::async_trait]

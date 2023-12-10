@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::block::Block;
+use crate::block::{transaction::Transaction, Block};
 use avalanche_types::{choices, ids, subnet};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -196,7 +196,7 @@ async fn test_state() {
         ids::Id::empty(),
         0,
         random_manager::u64(),
-        random_manager::secure_bytes(10).unwrap(),
+        Transaction::genesis(random_manager::secure_bytes(10).unwrap()),
         choices::status::Status::Accepted,
     )
     .unwrap();
@@ -206,7 +206,7 @@ async fn test_state() {
         genesis_blk.id(),
         1,
         genesis_blk.timestamp() + 1,
-        random_manager::secure_bytes(10).unwrap(),
+        Transaction::default(),
         choices::status::Status::Accepted,
     )
     .unwrap();
