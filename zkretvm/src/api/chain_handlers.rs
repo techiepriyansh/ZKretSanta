@@ -1,7 +1,10 @@
 //! Implements chain/VM specific handlers.
 //! To be served via `[HOST]/ext/bc/[CHAIN ID]/rpc`.
 
-use crate::{block::Block, vm::Vm};
+use crate::{
+    block::{transaction::Transaction, Block},
+    vm::Vm,
+};
 use avalanche_types::{ids, proto::http::Element, subnet::rpc::http::handle::Handle};
 use bytes::Bytes;
 use jsonrpc_core::{BoxFuture, Error, ErrorCode, IoHandler, Result};
@@ -33,8 +36,7 @@ pub trait Rpc {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ProposeBlockArgs {
-    #[serde(with = "avalanche_types::codec::serde::base64_bytes")]
-    pub data: Vec<u8>,
+    pub trasaction: Transaction,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -87,7 +89,7 @@ where
         let vm = self.vm.clone();
 
         Box::pin(async move {
-            vm.propose_block(args.data)
+            vm.propose_block(args.trasaction)
                 .await
                 .map_err(create_jsonrpc_error)?;
             Ok(ProposeBlockResponse { success: true })

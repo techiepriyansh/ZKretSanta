@@ -91,7 +91,7 @@ pub struct Vm<A> {
 
     /// A queue of data that have not been put into a block and proposed yet.
     /// Mempool is not persistent, so just keep in memory via Vm.
-    pub mempool: Arc<RwLock<VecDeque<Vec<u8>>>>,
+    pub mempool: Arc<RwLock<VecDeque<Transaction>>>,
 }
 
 impl<A> Default for Vm<A>
@@ -140,8 +140,8 @@ where
     /// Other VMs may optimize mempool with more complicated batching mechanisms.
     /// # Errors
     /// Can fail if the data size exceeds `PROPOSE_LIMIT_BYTES`.
-    pub async fn propose_block(&self, d: Vec<u8>) -> io::Result<()> {
-        let size = d.len();
+    pub async fn propose_block(&self, tx: Transaction) -> io::Result<()> {
+        let size = 1 + 4 * 8 + tx.data.4.len() + tx.data.5.len();
         log::info!("received propose_block of {size} bytes");
 
         if size > PROPOSE_LIMIT_BYTES {
@@ -153,7 +153,7 @@ where
         }
 
         let mut mempool = self.mempool.write().await;
-        mempool.push_back(d);
+        mempool.push_back(tx);
         log::info!("proposed {size} bytes of data for a block");
 
         self.notify_block_ready().await;
@@ -364,7 +364,7 @@ where
                 prnt_blk.id(),
                 prnt_blk.height() + 1,
                 unix_now,
-                Transaction::default(),
+                first,
                 choices::status::Status::Processing,
             )?;
             block.set_state(state.clone());
