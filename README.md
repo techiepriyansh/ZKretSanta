@@ -1,1 +1,1 @@
-# ZKretSanta - Truly secret Secret Santa
+# ZKretSanta - A truly secret, Secret Santa Protocol
