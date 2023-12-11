@@ -13,6 +13,7 @@ use santazk::merkle::MerkleTree;
 use santazk::proofs::ChoiceAuthProver;
 
 use clap::{arg, crate_version, Command};
+use colored::Colorize;
 
 pub const APP_NAME: &str = "zkretctl";
 
@@ -35,16 +36,33 @@ async fn main() -> io::Result<()> {
     let (sC, nC, pC, dC) = generate_key_tuple(&hasher);
 
     let txA_enter = create_enter_tx(&pA);
+    println!("{}", "ENTER".green());
+    println!(
+        "{}{}",
+        "PubKey: ".green(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pA)[..20].green()
+    );
     push_tx(txA_enter, url_path).await?;
-    let _ = sleep(Duration::from_secs(10)).await;
+    let _ = sleep(Duration::from_secs(20)).await;
 
     let txB_enter = create_enter_tx(&pB);
+    println!("{}", "ENTER".red());
+    println!(
+        "{}{}",
+        "PubKey: ".red(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pB[..20]).red()
+    );
     push_tx(txB_enter, url_path).await?;
     let _ = sleep(Duration::from_secs(10)).await;
 
     let txC_enter = create_enter_tx(&pC);
+    println!("{}", "ENTER".yellow());
+    println!(
+        "{}{}",
+        "PubKey: ".yellow(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pC)[..20].yellow()
+    );
     push_tx(txC_enter, url_path).await?;
-    let _ = sleep(Duration::from_secs(10)).await;
 
     // A chooses B
     let mt = MerkleTree::new(7, &[pA.clone(), pB.clone(), pC.clone()]);
@@ -68,6 +86,17 @@ async fn main() -> io::Result<()> {
             Vec::new(),
         ),
     };
+    println!("{}", "CHOOSE".green());
+    println!(
+        "{}{}",
+        "Choice: ".green(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pB)[..20].green()
+    );
+    println!(
+        "{}{}",
+        "DHPubKey: ".green(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &dA)[..20].green()
+    );
     push_tx(txA_choose, url_path).await?;
 
     // B reveal their pubkey. The ciphertext message can only be seen by A.
@@ -85,10 +114,26 @@ async fn main() -> io::Result<()> {
             SBytes64::from_bytes(&ct_hash),
             SBytes64::from_bytes(&dB),
             SBytes64::from_bytes(&sig_txB_reveal),
-            ct,
+            ct.clone(),
             proof,
         ),
     };
+    println!("{}", "REVEAL".red());
+    println!(
+        "{}{}",
+        "PubKey: ".red(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pB)[..20].red()
+    );
+    println!(
+        "{}{}",
+        "DHPubKey: ".red(),
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &dB)[..20].red()
+    );
+    println!(
+        "{}{}",
+        "Ciphertext: ".red(),
+        String::from_utf8(ct).unwrap().purple().italic()
+    );
     push_tx(txB_reveal, url_path).await?;
 
     Ok(())
@@ -116,21 +161,20 @@ fn create_enter_tx(pub_key: &[u8]) -> Transaction {
 
 async fn push_tx(tx: Transaction, url_path: &str) -> io::Result<()> {
     let s = serde_json::to_string(&tx).unwrap();
+    println!("{}\n", s);
+
     let s1 = r#"{
     "jsonrpc": "2.0",
     "id"     : 1,
     "method" : "zkretvm.proposeBlock",
     "params" : [{"transaction": "#;
     let s2 = r#"}]
-}
-    "#;
+}"#;
 
     let fin = format!("{}{}{}", s1, s, s2);
-    println!("{}", fin.clone());
+    // println!("{}", fin.clone());
     let res = http_manager::post_non_tls(HTTP_RPC, url_path, &fin).await?;
-    println!("{}", String::from_utf8(res).unwrap());
-    println!("");
-    println!("");
+    // println!("{}", String::from_utf8(res).unwrap());
 
     Ok(())
 }
