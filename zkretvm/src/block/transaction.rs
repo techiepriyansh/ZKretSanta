@@ -194,21 +194,21 @@ impl Transaction {
 }
 
 impl SBytes64 {
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
+    #[must_use] pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut sbytes64 = SBytes64::default();
         sbytes64.0.copy_from_slice(&bytes[0..32]);
         sbytes64.1.copy_from_slice(&bytes[32..64]);
         sbytes64
     }
 
-    pub(crate) fn to_u8_64(&self) -> [u8; 64] {
+    #[must_use] pub fn to_u8_64(&self) -> [u8; 64] {
         let mut res = [0u8; 64];
         res[0..32].copy_from_slice(&self.0);
         res[32..64].copy_from_slice(&self.1);
         res
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<u8> {
+    #[must_use] pub fn to_vec(&self) -> Vec<u8> {
         let mut res = Vec::new();
         res.extend_from_slice(&self.0);
         res.extend_from_slice(&self.1);

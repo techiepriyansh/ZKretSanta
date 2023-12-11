@@ -141,7 +141,7 @@ where
     /// # Errors
     /// Can fail if the data size exceeds `PROPOSE_LIMIT_BYTES`.
     pub async fn propose_block(&self, tx: Transaction) -> io::Result<()> {
-        let size = 1 + 4 * 8 + tx.data.4.len() + tx.data.5.len();
+        let size = 1 + 4 * 64 + tx.data.4.len() + tx.data.5.len();
         log::info!("received propose_block of {size} bytes");
 
         if size > PROPOSE_LIMIT_BYTES {
