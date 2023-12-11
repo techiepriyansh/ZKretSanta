@@ -1,180 +1,104 @@
-use http_manager;
-use santazk::proofs::RevealAuthProver;
-use serde_json;
-use std::io;
-use tokio::time::sleep;
-use tokio::time::Duration;
-use zkretvm::block::transaction::TransactionData;
-use zkretvm::block::transaction::{SBytes64, Transaction};
+mod check_santa;
+mod check_santee;
+mod choice;
+mod demo;
+mod enter;
+mod keygen;
+mod reveal;
+mod utils;
 
-use santazk::crypto::*;
-use santazk::hash::Hash;
-use santazk::merkle::MerkleTree;
-use santazk::proofs::ChoiceAuthProver;
+use std::io;
 
 use clap::{arg, crate_version, Command};
-use colored::Colorize;
 
 pub const APP_NAME: &str = "zkretctl";
-
-const HTTP_RPC: &str = "http://127.0.0.1:9650";
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let matches = Command::new(APP_NAME)
         .version(crate_version!())
         .about("ZKretSanta Client CLI")
-        .arg(arg!(<URL_PATH> "RPC URL path"))
+        .subcommands(vec![
+            keygen::command(),
+            enter::command(),
+            choice::command(),
+            check_santa::command(),
+            reveal::command(),
+            check_santee::command(),
+            demo::command(),
+        ])
         .get_matches();
 
-    let url_path = matches.get_one::<String>("URL_PATH").expect("required");
+    let default_key_path = "key.zkret".to_string();
 
-    let hasher = Hash::new();
+    match matches.subcommand() {
+        Some((keygen::NAME, sub_matches)) => {
+            let key_path = sub_matches
+                .get_one::<String>("KEY_PATH")
+                .unwrap_or(&default_key_path);
+            let chain_id = sub_matches.get_one::<String>("CHAIN_ID").expect("required");
 
-    let (sA, nA, pA, dA) = generate_key_tuple(&hasher);
-    let (sB, nB, pB, dB) = generate_key_tuple(&hasher);
-    let (sC, nC, pC, dC) = generate_key_tuple(&hasher);
+            keygen::gen_key(key_path, chain_id);
+        }
+        Some((enter::NAME, sub_matches)) => {
+            let key_path = sub_matches
+                .get_one::<String>("KEY_PATH")
+                .unwrap_or(&default_key_path);
 
-    let txA_enter = create_enter_tx(&pA);
-    println!("{}", "ENTER".green());
-    println!(
-        "{}{}",
-        "PubKey: ".green(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pA)[..20].green()
-    );
-    push_tx(txA_enter, url_path).await?;
-    let _ = sleep(Duration::from_secs(20)).await;
+            enter::do_enter(key_path).await?;
+        }
+        Some((choice::NAME, sub_matches)) => match sub_matches.subcommand() {
+            Some((choice::CHOICE_LIST, sub_sub_matches)) => {
+                let key_path = sub_sub_matches
+                    .get_one::<String>("KEY_PATH")
+                    .unwrap_or(&default_key_path);
 
-    let txB_enter = create_enter_tx(&pB);
-    println!("{}", "ENTER".red());
-    println!(
-        "{}{}",
-        "PubKey: ".red(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pB[..20]).red()
-    );
-    push_tx(txB_enter, url_path).await?;
-    let _ = sleep(Duration::from_secs(10)).await;
+                choice::list_choices(key_path).await?;
+            }
+            Some((choice::CHOICE_MAKE, sub_sub_matches)) => {
+                let key_path = sub_sub_matches
+                    .get_one::<String>("KEY_PATH")
+                    .unwrap_or(&default_key_path);
+                let choice = sub_sub_matches
+                    .get_one::<String>("CHOICE")
+                    .expect("required");
 
-    let txC_enter = create_enter_tx(&pC);
-    println!("{}", "ENTER".yellow());
-    println!(
-        "{}{}",
-        "PubKey: ".yellow(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pC)[..20].yellow()
-    );
-    push_tx(txC_enter, url_path).await?;
+                choice::do_choice_make(key_path, choice).await?;
+            }
+            _ => {}
+        },
+        Some((check_santa::NAME, sub_matches)) => {
+            let key_path = sub_matches
+                .get_one::<String>("KEY_PATH")
+                .unwrap_or(&default_key_path);
 
-    // A chooses B
-    let mt = MerkleTree::new(7, &[pA.clone(), pB.clone(), pC.clone()]);
-    let rpA = mt.generate_proof(0).unwrap();
-    let root = mt.root();
-    let sig_txA_choose = sign_choice_tx(&hasher, &sA, &nA, &pB, &dA);
+            check_santa::check_santa(key_path).await?;
+        }
+        Some((reveal::NAME, sub_matches)) => {
+            let key_path = sub_matches
+                .get_one::<String>("KEY_PATH")
+                .unwrap_or(&default_key_path);
+            let info = sub_matches
+                .get_one::<String>("INFO")
+                .expect("required");
 
-    // generate ZK proof for A choosing B without revealing his pubkey
-    let ca_prover = ChoiceAuthProver::new();
-    let proof = ca_prover.prove(&sA, &nA, &root, &rpA, &pB, &dA, &sig_txA_choose);
+            reveal::do_reveal(key_path, info).await?;
+        }
+        Some((check_santee::NAME, sub_matches)) => {
+            let key_path = sub_matches
+                .get_one::<String>("KEY_PATH")
+                .unwrap_or(&default_key_path);
 
-    // finally generate the tx and make the transaction
-    let txA_choose = Transaction {
-        transaction_type: 2,
-        data: TransactionData(
-            SBytes64::from_bytes(&pB),
-            SBytes64::from_bytes(&nA),
-            SBytes64::from_bytes(&dA),
-            SBytes64::from_bytes(&sig_txA_choose),
-            proof,
-            Vec::new(),
-        ),
-    };
-    println!("{}", "CHOOSE".green());
-    println!(
-        "{}{}",
-        "Choice: ".green(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pB)[..20].green()
-    );
-    println!(
-        "{}{}",
-        "DHPubKey: ".green(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &dA)[..20].green()
-    );
-    push_tx(txA_choose, url_path).await?;
+            check_santee::check_santee(key_path).await?;
+        }
+        Some((demo::NAME, sub_matches)) => {
+            let chain_id = sub_matches.get_one::<String>("CHAIN_ID").expect("required");
+            let client = utils::RpcClient::new(chain_id);
 
-    // B reveal their pubkey. The ciphertext message can only be seen by A.
-    let ct = b"Hi, I am B. Send me ZCash!".to_vec();
-    let ct_hash = hasher.h1(&ct);
-    let sig_txB_reveal = sign_reveal_tx(&hasher, &sB, &nB, &ct_hash, &dB);
-
-    let ra_prover = RevealAuthProver::new();
-    let proof = ra_prover.prove(&sB, &nB, &pB, &ct_hash, &dB, &sig_txB_reveal);
-
-    let txB_reveal = Transaction {
-        transaction_type: 3,
-        data: TransactionData(
-            SBytes64::from_bytes(&pB),
-            SBytes64::from_bytes(&ct_hash),
-            SBytes64::from_bytes(&dB),
-            SBytes64::from_bytes(&sig_txB_reveal),
-            ct.clone(),
-            proof,
-        ),
-    };
-    println!("{}", "REVEAL".red());
-    println!(
-        "{}{}",
-        "PubKey: ".red(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pB)[..20].red()
-    );
-    println!(
-        "{}{}",
-        "DHPubKey: ".red(),
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &dB)[..20].red()
-    );
-    println!(
-        "{}{}",
-        "Ciphertext: ".red(),
-        String::from_utf8(ct).unwrap().purple().italic()
-    );
-    push_tx(txB_reveal, url_path).await?;
-
-    Ok(())
-}
-
-fn generate_key_tuple(hasher: &Hash) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
-    let secret_key = random_manager::secure_bytes(64).unwrap();
-    let nullifier = random_manager::secure_bytes(64).unwrap();
-    let dh_key = random_manager::secure_bytes(64).unwrap();
-
-    let pub_key = derive_participation_pubkey(&hasher, &secret_key, &nullifier);
-
-    (secret_key, nullifier, pub_key, dh_key)
-}
-
-fn create_enter_tx(pub_key: &[u8]) -> Transaction {
-    let mut tx = Transaction {
-        transaction_type: 1,
-        ..Default::default()
-    };
-    tx.data.0 = SBytes64::from_bytes(&pub_key);
-
-    tx
-}
-
-async fn push_tx(tx: Transaction, url_path: &str) -> io::Result<()> {
-    let s = serde_json::to_string(&tx).unwrap();
-    println!("{}\n", s);
-
-    let s1 = r#"{
-    "jsonrpc": "2.0",
-    "id"     : 1,
-    "method" : "zkretvm.proposeBlock",
-    "params" : [{"transaction": "#;
-    let s2 = r#"}]
-}"#;
-
-    let fin = format!("{}{}{}", s1, s, s2);
-    // println!("{}", fin.clone());
-    let res = http_manager::post_non_tls(HTTP_RPC, url_path, &fin).await?;
-    // println!("{}", String::from_utf8(res).unwrap());
+            demo::run_demo(&client).await?
+        }
+        _ => {}
+    }
 
     Ok(())
 }
